@@ -16,7 +16,7 @@ INSTALL_DIR ?= /usr/local
 # single or posix; note that pthread support is still a work-in-progress.
 THREAD_MODEL ?= single
 # dlmalloc or none
-MALLOC_IMPL ?= dlmalloc
+MALLOC_IMPL ?= rpmalloc
 # yes or no
 BUILD_LIBC_TOP_HALF ?= yes
 # The directory where we will store intermediate artifacts.
@@ -49,6 +49,8 @@ DLMALLOC_SOURCES = $(DLMALLOC_SRC_DIR)/dlmalloc.c
 DLMALLOC_INC = $(DLMALLOC_DIR)/include
 EMMALLOC_DIR = emmalloc
 EMMALLOC_SOURCES = $(EMMALLOC_DIR)/emmalloc.c
+RPMALLOC_DIR = rpmalloc
+RPMALLOC_SOURCES = $(RPMALLOC_DIR)/rpmalloc.c
 LIBC_BOTTOM_HALF_DIR = libc-bottom-half
 LIBC_BOTTOM_HALF_CLOUDLIBC_SRC = $(LIBC_BOTTOM_HALF_DIR)/cloudlibc/src
 LIBC_BOTTOM_HALF_CLOUDLIBC_SRC_INC = $(LIBC_BOTTOM_HALF_CLOUDLIBC_SRC)/include
@@ -319,7 +321,7 @@ CFLAGS += -Wall -Wextra -Werror \
 
 # Configure support for threads.
 ifeq ($(THREAD_MODEL), single)
-CFLAGS += -mthread-model single
+CFLAGS += -mthread-model single -D__SINGLE_THREAD
 endif
 ifeq ($(THREAD_MODEL), posix)
 # Specify the tls-model until LLVM 15 is released (which should contain
@@ -350,12 +352,16 @@ objs = $(patsubst %.c,$(OBJDIR)/%.o,$(1))
 asmobjs = $(patsubst %.s,$(OBJDIR)/%.o,$(1))
 DLMALLOC_OBJS = $(call objs,$(DLMALLOC_SOURCES))
 EMMALLOC_OBJS = $(call objs,$(EMMALLOC_SOURCES))
+RPMALLOC_OBJS = $(call objs,$(RPMALLOC_SOURCES))
 LIBC_BOTTOM_HALF_ALL_OBJS = $(call objs,$(LIBC_BOTTOM_HALF_ALL_SOURCES))
 LIBC_TOP_HALF_ALL_OBJS = $(call asmobjs,$(call objs,$(LIBC_TOP_HALF_ALL_SOURCES)))
 ifeq ($(MALLOC_IMPL),dlmalloc)
 LIBC_OBJS += $(DLMALLOC_OBJS)
 else ifeq ($(MALLOC_IMPL),emmalloc)
 LIBC_OBJS += $(EMMALLOC_OBJS)
+else ifeq ($(MALLOC_IMPL),rpmalloc)
+LIBC_OBJS += $(LIBWASI_EMULATED_MMAN_OBJS) $(RPMALLOC_OBJS)
+CFLAGS += -D_WASI_EMULATED_MMAN
 else ifeq ($(MALLOC_IMPL),none)
 # No object files to add.
 else
@@ -367,6 +373,7 @@ ifeq ($(BUILD_LIBC_TOP_HALF),yes)
 # libc-top-half is musl.
 LIBC_OBJS += $(LIBC_TOP_HALF_ALL_OBJS)
 endif
+
 MUSL_PRINTSCAN_OBJS = $(call objs,$(MUSL_PRINTSCAN_SOURCES))
 MUSL_PRINTSCAN_LONG_DOUBLE_OBJS = $(patsubst %.o,%.long-double.o,$(MUSL_PRINTSCAN_OBJS))
 MUSL_PRINTSCAN_NO_FLOATING_POINT_OBJS = $(patsubst %.o,%.no-floating-point.o,$(MUSL_PRINTSCAN_OBJS))
@@ -535,6 +542,8 @@ $(OBJDIR)/%.o: %.s include_dirs
 
 $(DLMALLOC_OBJS): CFLAGS += \
     -I$(DLMALLOC_INC)
+# $(RPMALLOC_OBJS): CFLAGS += \
+#     -I$(RPMALLOC_INC)
 
 startup_files $(LIBC_BOTTOM_HALF_ALL_OBJS): CFLAGS += \
     -I$(LIBC_BOTTOM_HALF_HEADERS_PRIVATE) \
